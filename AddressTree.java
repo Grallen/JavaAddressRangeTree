@@ -55,15 +55,24 @@ public class AddressTree {
         }
     }
 
-    private static class IpRange {
-        long start, end;
-        String country;
-
-        IpRange(String[] record) {
-            // Reusing the static method from the outer class
+    IpRange(String[] record) {
+        if (record[0].contains("/")) {
+            // CIDR Mode: "1.2.3.0/24", [optional end], "US"
+            String[] parts = record[0].split("/");
+            this.start = ipToLong(parts[0]);
+            int prefix = Integer.parseInt(parts[1]);
+    
+            // Calculate end
+            long hostBits = (1L << (32 - prefix)) - 1;
+            this.end = this.start | hostBits;
+    
+            // Country code is always the last element
+            this.country = record[record.length - 1];
+        } else {
+            // Standard Mode: "1.2.3.0", "1.2.3.255", "US"
             this.start = ipToLong(record[0]);
             this.end = ipToLong(record[1]);
-            this.country = record[2];
+            this.country = record[record.length - 1];
         }
     }
 
