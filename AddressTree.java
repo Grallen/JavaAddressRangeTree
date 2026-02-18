@@ -8,9 +8,21 @@ public class AddressTree {
     //init
     public AddressTree(String[][] rawData) {
         // ingest range data
+        if (rawData == null) {
+            this.root = null;
+            return;
+        }
+
         List<IpRange> ranges = new ArrayList<>();
         for (String[] record : rawData) {
-            ranges.add(new IpRange(record));
+            try {
+                if (record != null && record.length >= 2) {
+                    ranges.add(new IpRange(record));
+                }
+            } catch (Exception e) {
+                // Skip malformed records (bad IPs, bad CIDR numbers, etc)
+                System.err.println("Skipping malformed record: " + java.util.Arrays.toString(record));
+            }
         }
         ranges.sort(Comparator.comparingLong(rec -> rec.start));
         // grow the tree!
@@ -32,14 +44,20 @@ public class AddressTree {
     
     //Takes ip as string, returns country code or null if not found
     public String find(String ipString) {
-        long target = ipToLong(ipString);
-        Node current = root;
-        //crawl
-        while (current != null) {
-            if (target >= current.start && target <= current.end) {
-                return current.country;
+        if (ipString == null || root == null) return null;
+        
+        try {
+            long target = ipToLong(ipString);
+            Node current = root;
+            //crawl
+            while (current != null) {
+                if (target >= current.start && target <= current.end) {
+                    return current.country;
+                }
+                current = (target < current.start) ? current.left : current.right;
             }
-            current = (target < current.start) ? current.left : current.right;
+        } catch (Exception e) {
+            return null; // Invalid IP format requested
         }
         return null;
     }
@@ -55,34 +73,44 @@ public class AddressTree {
         }
     }
 
-    IpRange(String[] record) {
-        if (record[0].contains("/")) {
-            // CIDR Mode: "1.2.3.0/24", [optional end], "US"
-            String[] parts = record[0].split("/");
-            this.start = ipToLong(parts[0]);
-            int prefix = Integer.parseInt(parts[1]);
-    
-            // Calculate end
-            long hostBits = (1L << (32 - prefix)) - 1;
-            this.end = this.start | hostBits;
-    
-            // Country code is always the last element
-            this.country = record[record.length - 1];
-        } else {
-            // Standard Mode: "1.2.3.0", "1.2.3.255", "US"
-            this.start = ipToLong(record[0]);
-            this.end = ipToLong(record[1]);
-            this.country = record[record.length - 1];
+    private static class IpRange {
+        long start, end;
+        String country;
+
+        IpRange(String[] record) {
+            if (record[0].contains("/")) {
+                // CIDR Mode: "1.2.3.0/24", [optional end], "US"
+                String[] parts = record[0].split("/");
+                this.start = ipToLong(parts[0]);
+                int prefix = Integer.parseInt(parts[1].trim());
+
+                if (prefix < 0 || prefix > 32) throw new IllegalArgumentException("Invalid CIDR");
+        
+                // Calculate end
+                long hostBits = (1L << (32 - prefix)) - 1;
+                this.end = this.start | hostBits;
+        
+                // Country code is always the last element
+                this.country = record[record.length - 1];
+            } else {
+                // Standard Mode: "1.2.3.0", "1.2.3.255", "US"
+                this.start = ipToLong(record[0]);
+                this.end = ipToLong(record[1]);
+                this.country = record[record.length - 1];
+            }
         }
     }
 
     //shared utils
     private static long ipToLong(String ip) {
-        String[] octets = ip.split("\\.");
+        if (ip == null) throw new IllegalArgumentException("IP is null");
+        String[] octets = ip.trim().split("\\.");
+        if (octets.length != 4) throw new IllegalArgumentException("Invalid IP format");
+        
         long result = 0;
         for (String octet : octets) {
             result <<= 8;
-            result |= (Integer.parseInt(octet) & 0xFF);
+            result |= (Integer.parseInt(octet.trim()) & 0xFF);
         }
         return result;
     }
